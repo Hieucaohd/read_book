@@ -10,6 +10,8 @@ def test_home_page():
     assert 'accept="application/pdf,.pdf"' in html
     assert html.count('for="fileInput"') == 2
     assert "/vendor/pdfjs/pdf.min.js" in html
+    assert 'id="vocaSheet"' in html
+    assert 'id="selectionSaveButton"' in html
 
 
 def test_reader_assets():

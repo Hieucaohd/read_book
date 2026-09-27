@@ -9,10 +9,19 @@
 - Giao diện sáng, màu giấy và tối
 - Chế độ xem trang PDF gốc
 - Tìm kiếm toàn văn và chuyển nhanh giữa các trang
+- Bôi đen từ và lưu thẳng vào một bộ từ trên Voca, kèm câu ngữ cảnh và số trang
 - Kéo thả file trên máy tính; file picker trên điện thoại
 - Ghi nhớ thiết lập đọc trên thiết bị
 
 > Reflow hoạt động với PDF có lớp văn bản. PDF scan chỉ gồm ảnh sẽ được mở ở chế độ trang gốc; OCR chưa được tích hợp.
+
+## Kết nối Voca
+
+1. Trong Voca, vào **Cài đặt → Ứng dụng kết nối** và tạo API key riêng cho Trang Giấy.
+2. Mở nút **Voca** trên thanh đầu trang, nhập key và chọn bộ từ mặc định.
+3. Trong chế độ **Văn bản**, bôi đen một từ. Trên máy tính, nhấn chuột phải và chọn **Lưu vào Voca**. Trên điện thoại, chạm nút **Lưu vào Voca** xuất hiện cạnh vùng chọn.
+
+API key chỉ được lưu trong `localStorage` của trình duyệt và được gửi trực tiếp tới `https://voca-zeta-five.vercel.app`; server Flask không nhận hoặc lưu key.
 
 ## Chạy local
 

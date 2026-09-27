@@ -6,7 +6,6 @@
   <meta name="theme-color" content="#f5f0e8">
   <meta name="description" content="Đọc PDF dễ chịu hơn trên điện thoại với reflow, tăng cỡ chữ và chế độ tối.">
   <title>Trang Giấy — Đọc PDF dễ chịu hơn</title>
-  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
 <body>
@@ -18,6 +17,10 @@
       </button>
 
       <div class="top-actions">
+        <button class="voca-top-button" id="vocaButton" type="button" aria-label="Kết nối Voca" title="Kết nối Voca">
+          <span aria-hidden="true">V</span><span class="voca-label">Voca</span>
+          <i id="vocaStatusDot" aria-hidden="true"></i>
+        </button>
         <button class="icon-button" id="searchButton" type="button" aria-label="Tìm trong sách" title="Tìm trong sách" disabled>
           <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
         </button>
@@ -131,6 +134,60 @@
         <button id="closeSearch" type="button" aria-label="Đóng tìm kiếm">×</button>
       </div>
       <div id="searchResults" class="search-results"></div>
+    </div>
+
+    <div class="selection-action hidden" id="selectionAction">
+      <button id="selectionSaveButton" type="button"><span aria-hidden="true">V</span> Lưu vào Voca</button>
+    </div>
+
+    <div class="selection-menu hidden" id="selectionMenu" role="menu">
+      <div id="selectionMenuWord"></div>
+      <button id="contextSaveButton" type="button" role="menuitem"><span aria-hidden="true">V</span> Lưu vào Voca</button>
+    </div>
+
+    <div class="voca-sheet hidden" id="vocaSheet" role="dialog" aria-modal="true" aria-labelledby="vocaSheetTitle">
+      <div class="voca-card">
+        <div class="voca-card-head">
+          <div class="voca-title-mark" aria-hidden="true">V</div>
+          <div><span>TRANG GIẤY × VOCA</span><h2 id="vocaSheetTitle">Lưu từ mới</h2></div>
+          <button id="closeVoca" type="button" aria-label="Đóng">×</button>
+        </div>
+
+        <section class="voca-connect" id="vocaConnect">
+          <p>Kết nối với tài khoản Voca bằng API key của riêng bạn. Key chỉ được lưu trên thiết bị này.</p>
+          <label for="vocaApiKey">Voca API key</label>
+          <div class="voca-key-row">
+            <input id="vocaApiKey" type="password" placeholder="voca_…" autocomplete="off" spellcheck="false">
+            <button class="secondary-button" id="connectVoca" type="button">Kết nối</button>
+          </div>
+          <div class="form-message" id="vocaConnectMessage" aria-live="polite"></div>
+          <a href="https://voca-zeta-five.vercel.app/" target="_blank" rel="noopener noreferrer">Mở Voca để tạo API key ↗</a>
+        </section>
+
+        <section class="voca-save hidden" id="vocaSaveForm">
+          <label for="vocaWord">Từ hoặc cụm từ</label>
+          <input class="voca-word-input" id="vocaWord" type="text" maxlength="200" autocomplete="off">
+
+          <label for="vocaCollection">Lưu vào bộ từ</label>
+          <select id="vocaCollection">
+            <option value="">Bộ mặc định / Hộp thư từ mới</option>
+          </select>
+
+          <div class="voca-context" id="vocaContext"></div>
+          <div class="form-message" id="vocaSaveMessage" aria-live="polite"></div>
+          <button class="primary voca-submit" id="saveToVoca" type="button">Lưu từ này</button>
+        </section>
+
+        <section class="voca-ready hidden" id="vocaReady">
+          <div class="connected-badge"><span></span> Đã kết nối với Voca</div>
+          <label for="vocaDefaultCollection">Bộ từ mặc định</label>
+          <select id="vocaDefaultCollection">
+            <option value="">Bộ mặc định / Hộp thư từ mới</option>
+          </select>
+          <p>Bôi đen từ trong chế độ Văn bản, sau đó chuột phải trên máy tính hoặc chạm “Lưu vào Voca” trên điện thoại.</p>
+          <button class="text-button" id="changeVocaKey" type="button">Đổi API key</button>
+        </section>
+      </div>
     </div>
 
     <div class="toast hidden" id="toast" role="status"></div>

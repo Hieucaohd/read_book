@@ -21,6 +21,13 @@ const elements = {
   fontValue: $("#fontValue"), lineHeight: $("#lineHeight"), sidebar: $("#sidebar"),
   searchSheet: $("#searchSheet"), searchInput: $("#searchInput"),
   searchResults: $("#searchResults"), toast: $("#toast"), dropZone: $("#dropZone"),
+  selectionAction: $("#selectionAction"), selectionMenu: $("#selectionMenu"),
+  vocaSheet: $("#vocaSheet"), vocaConnect: $("#vocaConnect"),
+  vocaSaveForm: $("#vocaSaveForm"), vocaReady: $("#vocaReady"),
+  vocaApiKey: $("#vocaApiKey"), vocaCollection: $("#vocaCollection"),
+  vocaDefaultCollection: $("#vocaDefaultCollection"), vocaWord: $("#vocaWord"),
+  vocaContext: $("#vocaContext"), vocaConnectMessage: $("#vocaConnectMessage"),
+  vocaSaveMessage: $("#vocaSaveMessage"),
 };
 
 const state = {
@@ -32,6 +39,14 @@ const state = {
   lineHeight: Number(storage.get("reader-line-height")) || 1.7,
   theme: storage.get("reader-theme") || "sepia",
   renderTask: null,
+};
+
+const VOCA_API = "https://voca-zeta-five.vercel.app/api/v1";
+const vocaState = {
+  apiKey: storage.get("voca-api-key") || "",
+  collectionId: storage.get("voca-collection-id") || "",
+  collections: [],
+  selection: null,
 };
 
 function applyPreferences() {
@@ -293,6 +308,243 @@ function runSearch(query) {
   }));
 }
 
+function sentenceAroundSelection(element, word) {
+  const text = element?.textContent?.replace(/\s+/g, " ").trim() || "";
+  if (!text) return "";
+  const at = text.toLocaleLowerCase("en").indexOf(word.toLocaleLowerCase("en"));
+  if (at < 0) return text.slice(0, 2000);
+  const boundaries = [text.lastIndexOf(".", at), text.lastIndexOf("!", at), text.lastIndexOf("?", at)];
+  const start = Math.max(...boundaries) + 1;
+  const endings = [text.indexOf(".", at + word.length), text.indexOf("!", at + word.length), text.indexOf("?", at + word.length)].filter((value) => value >= 0);
+  const end = endings.length ? Math.min(...endings) + 1 : text.length;
+  return text.slice(start, end).trim().slice(0, 2000);
+}
+
+function captureTextSelection() {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
+  const range = selection.getRangeAt(0);
+  const commonNode = range.commonAncestorContainer;
+  const commonElement = commonNode.nodeType === Node.ELEMENT_NODE ? commonNode : commonNode.parentElement;
+  const pageElement = commonElement?.closest?.(".text-page");
+  if (!pageElement || !elements.reflow.contains(pageElement)) return null;
+
+  const word = selection.toString().replace(/\s+/g, " ").trim()
+    .replace(/^[^\p{L}\p{N}]+/u, "").replace(/[^\p{L}\p{N}]+$/u, "").slice(0, 200);
+  if (!word) return null;
+  const textElement = commonElement.closest?.("p, h2") || pageElement;
+  const rect = range.getBoundingClientRect();
+  if (!rect.width && !rect.height) return null;
+
+  return {
+    word,
+    sentence: sentenceAroundSelection(textElement, word),
+    page: Number(pageElement.dataset.page) || state.page,
+    rect,
+  };
+}
+
+function hideSelectionTools() {
+  elements.selectionAction.classList.add("hidden");
+  elements.selectionMenu.classList.add("hidden");
+}
+
+function showMobileSelectionAction() {
+  if (!window.matchMedia("(hover: none), (pointer: coarse)").matches || state.mode !== "reflow") return;
+  const captured = captureTextSelection();
+  if (!captured) {
+    elements.selectionAction.classList.add("hidden");
+    return;
+  }
+  vocaState.selection = captured;
+  const x = Math.max(78, Math.min(window.innerWidth - 78, captured.rect.left + captured.rect.width / 2));
+  const y = captured.rect.top > 64 ? captured.rect.top - 9 : captured.rect.bottom + 52;
+  elements.selectionAction.style.left = `${x}px`;
+  elements.selectionAction.style.top = `${y}px`;
+  elements.selectionAction.classList.remove("hidden");
+}
+
+function setVocaConnected(connected) {
+  $("#vocaButton").classList.toggle("connected", connected);
+  $("#vocaButton").setAttribute("aria-label", connected ? "Voca đã kết nối" : "Kết nối Voca");
+}
+
+function setFormMessage(element, message = "", success = false) {
+  element.textContent = message;
+  element.classList.toggle("success", success);
+}
+
+function populateCollections(items) {
+  vocaState.collections = Array.isArray(items) ? items : [];
+  [elements.vocaCollection, elements.vocaDefaultCollection].forEach((select) => {
+    const current = vocaState.collectionId;
+    select.innerHTML = "";
+    const defaultOption = document.createElement("option");
+    defaultOption.value = "";
+    defaultOption.textContent = "Bộ mặc định / Hộp thư từ mới";
+    select.append(defaultOption);
+    vocaState.collections.forEach((collection) => {
+      const option = document.createElement("option");
+      option.value = collection.id;
+      option.textContent = `${collection.parent_id ? "↳ " : ""}${collection.name}${collection.is_inbox ? " · Inbox" : ""}`;
+      select.append(option);
+    });
+    select.value = [...select.options].some((option) => option.value === current) ? current : "";
+  });
+}
+
+async function vocaRequest(path, options = {}) {
+  let response;
+  try {
+    response = await fetch(`${VOCA_API}${path}`, {
+      ...options,
+      headers: { "X-API-Key": vocaState.apiKey, ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers },
+    });
+  } catch {
+    throw new Error("Không thể kết nối Voca. Hãy kiểm tra mạng và thử lại.");
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data?.error?.message || `Voca trả về lỗi ${response.status}.`);
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+}
+
+async function loadVocaCollections() {
+  const data = await vocaRequest("/external/collections");
+  populateCollections(data.items);
+  return data.items;
+}
+
+function showVocaConnect(message = "") {
+  elements.vocaConnect.classList.remove("hidden");
+  elements.vocaSaveForm.classList.add("hidden");
+  elements.vocaReady.classList.add("hidden");
+  elements.vocaApiKey.value = "";
+  setFormMessage(elements.vocaConnectMessage, message);
+  $("#vocaSheetTitle").textContent = "Kết nối Voca";
+  setTimeout(() => elements.vocaApiKey.focus(), 50);
+}
+
+function showVocaSave() {
+  const selected = vocaState.selection;
+  if (!selected) return;
+  elements.vocaConnect.classList.add("hidden");
+  elements.vocaReady.classList.add("hidden");
+  elements.vocaSaveForm.classList.remove("hidden");
+  elements.vocaWord.value = selected.word;
+  elements.vocaCollection.value = vocaState.collectionId;
+  elements.vocaContext.textContent = selected.sentence
+    ? `“${selected.sentence}” · Trang ${selected.page}`
+    : `Ngữ cảnh từ trang ${selected.page}`;
+  setFormMessage(elements.vocaSaveMessage);
+  $("#vocaSheetTitle").textContent = "Lưu từ mới";
+}
+
+function showVocaReady() {
+  elements.vocaConnect.classList.add("hidden");
+  elements.vocaSaveForm.classList.add("hidden");
+  elements.vocaReady.classList.remove("hidden");
+  elements.vocaDefaultCollection.value = vocaState.collectionId;
+  $("#vocaSheetTitle").textContent = "Kết nối Voca";
+}
+
+async function openVocaSheet(withSelection = false) {
+  hideSelectionTools();
+  elements.vocaSheet.classList.remove("hidden");
+  if (!vocaState.apiKey) {
+    showVocaConnect();
+    return;
+  }
+  setVocaConnected(true);
+  if (withSelection) showVocaSave(); else showVocaReady();
+  if (!vocaState.collections.length) {
+    try {
+      await loadVocaCollections();
+      if (withSelection) showVocaSave(); else showVocaReady();
+    } catch (error) {
+      if (error.status === 401 || error.status === 403) {
+        setVocaConnected(false);
+        showVocaConnect("API key không còn hợp lệ. Vui lòng nhập key mới.");
+      } else {
+        if (withSelection) setFormMessage(elements.vocaSaveMessage, error.message);
+        else showToast(error.message);
+      }
+    }
+  }
+}
+
+async function connectVoca() {
+  const key = elements.vocaApiKey.value.trim();
+  if (!key) {
+    setFormMessage(elements.vocaConnectMessage, "Hãy nhập API key từ Voca.");
+    return;
+  }
+  const button = $("#connectVoca");
+  button.disabled = true;
+  button.textContent = "Đang kết nối…";
+  setFormMessage(elements.vocaConnectMessage);
+  vocaState.apiKey = key;
+  try {
+    await loadVocaCollections();
+    storage.set("voca-api-key", key);
+    setVocaConnected(true);
+    if (vocaState.selection) showVocaSave(); else showVocaReady();
+  } catch (error) {
+    vocaState.apiKey = "";
+    setVocaConnected(false);
+    setFormMessage(elements.vocaConnectMessage, error.status === 401 ? "API key không hợp lệ hoặc đã bị thu hồi." : error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Kết nối";
+  }
+}
+
+async function saveSelectionToVoca() {
+  const word = elements.vocaWord.value.replace(/\s+/g, " ").trim().slice(0, 200);
+  if (!word) {
+    setFormMessage(elements.vocaSaveMessage, "Từ cần lưu không được để trống.");
+    return;
+  }
+  const button = $("#saveToVoca");
+  button.disabled = true;
+  button.textContent = "Đang lưu…";
+  setFormMessage(elements.vocaSaveMessage);
+  const selected = vocaState.selection;
+  const collectionId = elements.vocaCollection.value;
+  const body = {
+    word,
+    language: "en",
+    source: "trang_giay_pdf_reader",
+    context: {
+      sentence: selected?.sentence || undefined,
+      source_title: elements.fileName.textContent || "PDF",
+      source_type: "book",
+      location: `Trang ${selected?.page || state.page}`,
+    },
+    ...(collectionId ? { collection_id: collectionId } : {}),
+  };
+  try {
+    const result = await vocaRequest("/external/vocabulary", { method: "POST", body: JSON.stringify(body) });
+    vocaState.collectionId = collectionId;
+    storage.set("voca-collection-id", collectionId);
+    const messages = { created: "Đã lưu từ mới vào Voca.", updated: "Đã bổ sung ngữ cảnh vào từ này.", unchanged: "Từ này đã có trong Voca." };
+    const message = messages[result.status] || "Đã lưu vào Voca.";
+    setFormMessage(elements.vocaSaveMessage, message, true);
+    showToast(`${word}: ${message}`);
+    window.getSelection()?.removeAllRanges();
+    setTimeout(() => elements.vocaSheet.classList.add("hidden"), 850);
+  } catch (error) {
+    if (error.status === 401 || error.status === 403) setVocaConnected(false);
+    setFormMessage(elements.vocaSaveMessage, error.status === 401 ? "API key không hợp lệ hoặc đã bị thu hồi." : error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Lưu từ này";
+  }
+}
+
 function returnHome() {
   if (!state.pdf || confirm("Đóng tài liệu hiện tại và quay về trang đầu?")) {
     state.pdf?.destroy();
@@ -305,6 +557,7 @@ function returnHome() {
 }
 
 applyPreferences();
+setVocaConnected(Boolean(vocaState.apiKey));
 
 elements.fileInput.addEventListener("change", (event) => openPdf(event.target.files[0]));
 [$("#openTopButton"), $("#openHeroButton")].forEach((label) => label.addEventListener("keydown", (event) => {
@@ -334,9 +587,53 @@ $("#closeSearch").addEventListener("click", () => elements.searchSheet.classList
 elements.searchInput.addEventListener("input", (event) => runSearch(event.target.value));
 elements.searchSheet.addEventListener("click", (event) => { if (event.target === elements.searchSheet) elements.searchSheet.classList.add("hidden"); });
 
+$("#vocaButton").addEventListener("click", () => {
+  vocaState.selection = null;
+  openVocaSheet(false);
+});
+$("#closeVoca").addEventListener("click", () => elements.vocaSheet.classList.add("hidden"));
+elements.vocaSheet.addEventListener("click", (event) => { if (event.target === elements.vocaSheet) elements.vocaSheet.classList.add("hidden"); });
+$("#connectVoca").addEventListener("click", connectVoca);
+elements.vocaApiKey.addEventListener("keydown", (event) => { if (event.key === "Enter") connectVoca(); });
+$("#saveToVoca").addEventListener("click", saveSelectionToVoca);
+$("#changeVocaKey").addEventListener("click", () => showVocaConnect());
+[elements.vocaCollection, elements.vocaDefaultCollection].forEach((select) => select.addEventListener("change", (event) => {
+  vocaState.collectionId = event.target.value;
+  storage.set("voca-collection-id", vocaState.collectionId);
+  elements.vocaCollection.value = vocaState.collectionId;
+  elements.vocaDefaultCollection.value = vocaState.collectionId;
+}));
+
+elements.reflow.addEventListener("contextmenu", (event) => {
+  const captured = captureTextSelection();
+  if (!captured) return;
+  event.preventDefault();
+  vocaState.selection = captured;
+  $("#selectionMenuWord").textContent = `“${captured.word}”`;
+  const left = Math.max(8, Math.min(event.clientX, window.innerWidth - 233));
+  const top = Math.max(8, Math.min(event.clientY, window.innerHeight - 105));
+  elements.selectionMenu.style.left = `${left}px`;
+  elements.selectionMenu.style.top = `${top}px`;
+  elements.selectionMenu.classList.remove("hidden");
+  elements.selectionAction.classList.add("hidden");
+});
+
+$("#contextSaveButton").addEventListener("click", () => openVocaSheet(true));
+$("#selectionSaveButton").addEventListener("pointerdown", (event) => event.preventDefault());
+$("#selectionSaveButton").addEventListener("click", () => openVocaSheet(true));
+document.addEventListener("pointerdown", (event) => {
+  if (!elements.selectionMenu.contains(event.target)) elements.selectionMenu.classList.add("hidden");
+});
+document.addEventListener("selectionchange", () => {
+  clearTimeout(showMobileSelectionAction.timer);
+  if (!elements.vocaSheet.classList.contains("hidden")) return;
+  showMobileSelectionAction.timer = setTimeout(showMobileSelectionAction, 220);
+});
+window.addEventListener("scroll", () => elements.selectionAction.classList.add("hidden"), { passive: true });
+
 window.addEventListener("resize", () => { if (state.mode === "original" && state.pdf) renderOriginalPage(); });
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") { elements.searchSheet.classList.add("hidden"); elements.settings.classList.add("hidden"); elements.sidebar.classList.remove("open"); }
+  if (event.key === "Escape") { elements.searchSheet.classList.add("hidden"); elements.vocaSheet.classList.add("hidden"); hideSelectionTools(); elements.settings.classList.add("hidden"); elements.sidebar.classList.remove("open"); }
   if (state.pdf && !elements.searchSheet.classList.contains("hidden")) return;
   if (state.pdf && event.key === "ArrowLeft") goToPage(state.page - 1);
   if (state.pdf && event.key === "ArrowRight") goToPage(state.page + 1);
