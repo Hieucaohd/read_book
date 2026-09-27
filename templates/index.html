@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f5f0e8">
+  <meta name="description" content="Đọc PDF dễ chịu hơn trên điện thoại với reflow, tăng cỡ chữ và chế độ tối.">
+  <title>Trang Giấy — Đọc PDF dễ chịu hơn</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+  <div id="app" class="app-shell" data-theme="sepia">
+    <header class="topbar">
+      <button class="brand" id="homeButton" type="button" aria-label="Về trang đầu">
+        <span class="brand-mark" aria-hidden="true">TG</span>
+        <span class="brand-copy"><strong>Trang Giấy</strong><small>PDF reader</small></span>
+      </button>
+
+      <div class="top-actions">
+        <button class="icon-button" id="searchButton" type="button" aria-label="Tìm trong sách" title="Tìm trong sách" disabled>
+          <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+        </button>
+        <button class="icon-button" id="themeButton" type="button" aria-label="Đổi giao diện" title="Đổi giao diện">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M20.5 15.3A8.6 8.6 0 0 1 8.7 3.5 8.8 8.8 0 1 0 20.5 15.3Z"/></svg>
+        </button>
+        <label class="primary small" id="openTopButton" for="fileInput" role="button" tabindex="0">Mở PDF</label>
+      </div>
+    </header>
+
+    <main>
+      <section class="welcome" id="welcomeView">
+        <div class="welcome-copy">
+          <span class="eyebrow">ĐỌC THEO CÁCH CỦA BẠN</span>
+          <h1>Một góc đọc sách<br><em>thật dễ chịu.</em></h1>
+          <p>Biến file PDF thành văn bản vừa vặn với màn hình. Tăng cỡ chữ, đổi màu nền và đọc thoải mái trên điện thoại.</p>
+          <div class="welcome-actions">
+            <label class="primary large" id="openHeroButton" for="fileInput" role="button" tabindex="0">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 20h14"/></svg>
+              Chọn file PDF
+            </label>
+            <span class="privacy-note">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+              File chỉ được xử lý trên thiết bị của bạn
+            </span>
+          </div>
+        </div>
+
+        <div class="book-visual" aria-hidden="true">
+          <div class="sun"></div>
+          <div class="plant"><i></i><i></i><i></i><b></b></div>
+          <div class="book-cover">
+            <span>NHỮNG TRANG</span>
+            <strong>Bình<br>yên</strong>
+            <div class="cover-line"></div>
+            <small>MỘT CUỐN SÁCH CỦA BẠN</small>
+          </div>
+          <div class="shadow"></div>
+        </div>
+
+        <div class="features">
+          <article><span class="feature-icon">Aa</span><div><h2>Chữ dễ đọc</h2><p>Tự động dàn lại văn bản, chỉnh cỡ chữ và khoảng cách dòng.</p></div></article>
+          <article><span class="feature-icon moon">◐</span><div><h2>Dịu mắt hơn</h2><p>Ba giao diện sáng, màu giấy và tối cho mọi thời điểm.</p></div></article>
+          <article><span class="feature-icon">↗</span><div><h2>Riêng tư</h2><p>PDF không rời khỏi trình duyệt và không được lưu lên máy chủ.</p></div></article>
+        </div>
+      </section>
+
+      <section class="reader hidden" id="readerView" aria-live="polite">
+        <aside class="sidebar" id="sidebar">
+          <div class="sidebar-head">
+            <span>NỘI DUNG</span>
+            <button class="plain-button" id="closeSidebar" type="button" aria-label="Đóng mục lục">×</button>
+          </div>
+          <nav id="pageList" class="page-list" aria-label="Danh sách trang"></nav>
+        </aside>
+
+        <div class="reader-main">
+          <div class="document-bar">
+            <button class="icon-button mobile-only" id="menuButton" type="button" aria-label="Mở mục lục">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+            </button>
+            <div class="document-title">
+              <strong id="fileName">Tài liệu</strong>
+              <span id="pageStatus">Đang chuẩn bị…</span>
+            </div>
+            <div class="view-switch" role="group" aria-label="Kiểu hiển thị">
+              <button class="active" id="reflowButton" type="button">Văn bản</button>
+              <button id="originalButton" type="button">Trang gốc</button>
+            </div>
+            <button class="icon-button" id="settingsButton" type="button" aria-label="Cài đặt đọc" aria-expanded="false">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6"/></svg>
+            </button>
+          </div>
+
+          <div class="settings-panel hidden" id="settingsPanel">
+            <div class="setting-row">
+              <span>Cỡ chữ</span>
+              <div class="stepper"><button id="fontDown" type="button" aria-label="Giảm cỡ chữ">A−</button><output id="fontValue">19</output><button id="fontUp" type="button" aria-label="Tăng cỡ chữ">A+</button></div>
+            </div>
+            <div class="setting-row">
+              <label for="lineHeight">Khoảng cách dòng</label>
+              <input id="lineHeight" type="range" min="1.35" max="2.1" step="0.05" value="1.7">
+            </div>
+            <div class="setting-row themes"><span>Màu nền</span><div><button data-set-theme="light" aria-label="Nền sáng"></button><button class="active" data-set-theme="sepia" aria-label="Nền màu giấy"></button><button data-set-theme="dark" aria-label="Nền tối"></button></div></div>
+          </div>
+
+          <div class="loading hidden" id="loadingView">
+            <div class="loader"><span></span></div>
+            <strong>Đang mở cuốn sách…</strong>
+            <p id="loadingText">Đang đọc thông tin PDF</p>
+          </div>
+
+          <article class="reflow-content" id="reflowContent"></article>
+          <div class="canvas-content hidden" id="canvasContent"><canvas id="pdfCanvas"></canvas></div>
+
+          <div class="reader-nav hidden" id="readerNav">
+            <button id="prevPage" type="button">← <span>Trang trước</span></button>
+            <span id="navStatus">1 / 1</span>
+            <button id="nextPage" type="button"><span>Trang sau</span> →</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <input id="fileInput" type="file" accept="application/pdf,.pdf" hidden>
+
+    <div class="search-sheet hidden" id="searchSheet" role="dialog" aria-modal="true" aria-label="Tìm trong sách">
+      <div class="search-box">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+        <input id="searchInput" type="search" placeholder="Nhập từ cần tìm…" autocomplete="off">
+        <button id="closeSearch" type="button" aria-label="Đóng tìm kiếm">×</button>
+      </div>
+      <div id="searchResults" class="search-results"></div>
+    </div>
+
+    <div class="toast hidden" id="toast" role="status"></div>
+    <div class="drop-zone hidden" id="dropZone"><strong>Thả file PDF vào đây</strong></div>
+  </div>
+
+  <script src="{{ url_for('static', filename='vendor/pdfjs/pdf.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
