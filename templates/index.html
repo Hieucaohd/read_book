@@ -27,7 +27,15 @@
         <button class="icon-button" id="themeButton" type="button" aria-label="Đổi giao diện" title="Đổi giao diện">
           <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M20.5 15.3A8.6 8.6 0 0 1 8.7 3.5 8.8 8.8 0 1 0 20.5 15.3Z"/></svg>
         </button>
+        <button class="user-button hidden" id="userButton" type="button" aria-label="Tài khoản" aria-expanded="false">
+          <span id="userInitial">U</span><strong id="userName">User</strong>
+        </button>
         <label class="primary small" id="openTopButton" for="fileInput" role="button" tabindex="0">Mở PDF</label>
+      </div>
+      <div class="user-menu hidden" id="userMenu">
+        <div><small>ĐANG ĐĂNG NHẬP</small><strong id="userMenuName">User</strong></div>
+        <button id="showLibrary" type="button">Thư viện trên thiết bị</button>
+        <button id="logoutButton" type="button">Đăng xuất</button>
       </div>
     </header>
 
@@ -66,6 +74,20 @@
           <article><span class="feature-icon moon">◐</span><div><h2>Dịu mắt hơn</h2><p>Ba giao diện sáng, màu giấy và tối cho mọi thời điểm.</p></div></article>
           <article><span class="feature-icon">↗</span><div><h2>Riêng tư</h2><p>PDF không rời khỏi trình duyệt và không được lưu lên máy chủ.</p></div></article>
         </div>
+
+        <section class="local-library" id="localLibrary">
+          <div class="library-heading">
+            <div><span>THƯ VIỆN CỦA BẠN</span><h2>Sách trên thiết bị này</h2></div>
+            <label for="fileInput" role="button" tabindex="0">+ Thêm PDF</label>
+          </div>
+          <div class="library-grid" id="libraryGrid"></div>
+          <div class="library-empty" id="libraryEmpty">
+            <span aria-hidden="true">⌑</span>
+            <strong>Chưa có sách nào</strong>
+            <p>PDF bạn mở sẽ được lưu trong trình duyệt trên thiết bị này.</p>
+          </div>
+          <p class="library-note">Sách không được tải lên database hay máy chủ. Xóa dữ liệu trình duyệt cũng sẽ xóa thư viện trên thiết bị này.</p>
+        </section>
       </section>
 
       <section class="reader hidden" id="readerView" aria-live="polite">
@@ -126,6 +148,27 @@
     </main>
 
     <input id="fileInput" type="file" accept="application/pdf,.pdf" hidden>
+
+    <div class="auth-gate" id="authGate" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+      <div class="auth-card">
+        <div class="auth-brand"><span>TG</span><div><strong>Trang Giấy</strong><small>Không gian đọc của riêng bạn</small></div></div>
+        <div class="auth-tabs" role="tablist">
+          <button class="active" id="loginTab" type="button" role="tab">Đăng nhập</button>
+          <button id="registerTab" type="button" role="tab">Tạo tài khoản</button>
+        </div>
+        <form id="authForm">
+          <h2 id="authTitle">Chào bạn trở lại</h2>
+          <p id="authSubtitle">Đăng nhập để đồng bộ thiết lập đọc của bạn.</p>
+          <label for="authUsername">Tên đăng nhập</label>
+          <input id="authUsername" name="username" type="text" minlength="3" maxlength="32" autocomplete="username" required>
+          <label for="authPassword">Mật khẩu</label>
+          <input id="authPassword" name="password" type="password" minlength="8" maxlength="128" autocomplete="current-password" required>
+          <div class="form-message" id="authMessage" aria-live="polite"></div>
+          <button class="primary auth-submit" id="authSubmit" type="submit">Đăng nhập</button>
+        </form>
+        <div class="auth-privacy"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg> PDF luôn nằm trên thiết bị của bạn</div>
+      </div>
+    </div>
 
     <div class="search-sheet hidden" id="searchSheet" role="dialog" aria-modal="true" aria-label="Tìm trong sách">
       <div class="search-box">

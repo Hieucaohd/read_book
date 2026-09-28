@@ -10,6 +10,9 @@ const storage = {
   set(key, value) {
     try { window.localStorage.setItem(key, String(value)); } catch { /* Reading still works without saved preferences. */ }
   },
+  remove(key) {
+    try { window.localStorage.removeItem(key); } catch { /* Storage may be unavailable in private mode. */ }
+  },
 };
 
 const elements = {
@@ -28,6 +31,10 @@ const elements = {
   vocaDefaultCollection: $("#vocaDefaultCollection"), vocaWord: $("#vocaWord"),
   vocaContext: $("#vocaContext"), vocaConnectMessage: $("#vocaConnectMessage"),
   vocaSaveMessage: $("#vocaSaveMessage"),
+  authGate: $("#authGate"), authForm: $("#authForm"), authUsername: $("#authUsername"),
+  authPassword: $("#authPassword"), authMessage: $("#authMessage"),
+  userButton: $("#userButton"), userMenu: $("#userMenu"),
+  libraryGrid: $("#libraryGrid"), libraryEmpty: $("#libraryEmpty"),
 };
 
 const state = {
@@ -39,12 +46,19 @@ const state = {
   lineHeight: Number(storage.get("reader-line-height")) || 1.7,
   theme: storage.get("reader-theme") || "sepia",
   renderTask: null,
+  currentBookId: null,
+};
+
+const authState = {
+  user: null,
+  csrfToken: "",
+  mode: "login",
 };
 
 const VOCA_API = "https://voca-zeta-five.vercel.app/api/v1";
 const vocaState = {
-  apiKey: storage.get("voca-api-key") || "",
-  collectionId: storage.get("voca-collection-id") || "",
+  apiKey: "",
+  collectionId: "",
   collections: [],
   selection: null,
 };
@@ -64,6 +78,7 @@ function setTheme(theme) {
   state.theme = theme;
   storage.set("reader-theme", theme);
   applyPreferences();
+  scheduleSettingsSync();
 }
 
 function showToast(message) {
@@ -71,6 +86,287 @@ function showToast(message) {
   elements.toast.classList.remove("hidden");
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => elements.toast.classList.add("hidden"), 2800);
+}
+
+async function appApi(path, options = {}) {
+  const headers = { ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers };
+  if (authState.csrfToken && options.method && options.method !== "GET") headers["X-CSRF-Token"] = authState.csrfToken;
+  const response = await fetch(path, { credentials: "same-origin", ...options, headers });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data?.error?.message || "Có lỗi xảy ra. Vui lòng thử lại.");
+    error.status = response.status;
+    error.code = data?.error?.code;
+    throw error;
+  }
+  return data;
+}
+
+function applyAccountSettings(settings = {}) {
+  state.theme = settings.theme || "sepia";
+  state.fontSize = Number(settings.font_size) || 19;
+  state.lineHeight = Number(settings.line_height) || 1.7;
+  vocaState.collectionId = settings.voca_collection_id || "";
+  storage.set("reader-theme", state.theme);
+  storage.set("reader-font-size", state.fontSize);
+  storage.set("reader-line-height", state.lineHeight);
+  applyPreferences();
+}
+
+function scheduleSettingsSync() {
+  if (!authState.user) return;
+  clearTimeout(scheduleSettingsSync.timer);
+  scheduleSettingsSync.timer = setTimeout(async () => {
+    try {
+      await appApi("/api/settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          theme: state.theme,
+          font_size: state.fontSize,
+          line_height: state.lineHeight,
+          voca_collection_id: vocaState.collectionId,
+        }),
+      });
+    } catch (error) {
+      if (error.status === 401) showAuthGate();
+      else showToast("Chưa thể đồng bộ thiết lập.");
+    }
+  }, 500);
+}
+
+function setAuthMode(mode) {
+  authState.mode = mode;
+  const registering = mode === "register";
+  $("#loginTab").classList.toggle("active", !registering);
+  $("#registerTab").classList.toggle("active", registering);
+  $("#authTitle").textContent = registering ? "Tạo góc đọc của bạn" : "Chào bạn trở lại";
+  $("#authSubtitle").textContent = registering ? "Thiết lập đọc sẽ theo bạn trên mọi thiết bị." : "Đăng nhập để đồng bộ thiết lập đọc của bạn.";
+  $("#authSubmit").textContent = registering ? "Tạo tài khoản" : "Đăng nhập";
+  elements.authPassword.autocomplete = registering ? "new-password" : "current-password";
+  setFormMessage(elements.authMessage);
+}
+
+function showAuthGate() {
+  elements.authGate.classList.remove("hidden");
+  elements.userButton.classList.add("hidden");
+  setTimeout(() => elements.authUsername.focus(), 50);
+}
+
+function vocaKeyForUser() {
+  return authState.user ? `voca-api-key:${authState.user.id}` : "";
+}
+
+async function handleAuthenticated(data) {
+  authState.user = data.user;
+  authState.csrfToken = data.csrf_token;
+  applyAccountSettings(data.settings);
+  const scopedKey = storage.get(vocaKeyForUser());
+  const legacyKey = storage.get("voca-api-key");
+  vocaState.apiKey = scopedKey || legacyKey || "";
+  if (!scopedKey && legacyKey) storage.set(vocaKeyForUser(), legacyKey);
+  if (legacyKey) storage.remove("voca-api-key");
+  vocaState.collections = [];
+  setVocaConnected(Boolean(vocaState.apiKey));
+  $("#userInitial").textContent = data.user.username.slice(0, 1);
+  $("#userName").textContent = data.user.username;
+  $("#userMenuName").textContent = data.user.username;
+  elements.userButton.classList.remove("hidden");
+  elements.authGate.classList.add("hidden");
+  await renderLibrary();
+}
+
+async function initializeAuth() {
+  try {
+    await handleAuthenticated(await appApi("/api/auth/me"));
+  } catch (error) {
+    if (error.status !== 401) setFormMessage(elements.authMessage, "Không thể kết nối máy chủ. Hãy tải lại trang.");
+    showAuthGate();
+  }
+}
+
+async function submitAuth(event) {
+  event.preventDefault();
+  const button = $("#authSubmit");
+  button.disabled = true;
+  button.textContent = authState.mode === "register" ? "Đang tạo…" : "Đang đăng nhập…";
+  setFormMessage(elements.authMessage);
+  try {
+    const data = await appApi(`/api/auth/${authState.mode}`, {
+      method: "POST",
+      body: JSON.stringify({ username: elements.authUsername.value.trim(), password: elements.authPassword.value }),
+    });
+    elements.authPassword.value = "";
+    await handleAuthenticated(data);
+  } catch (error) {
+    setFormMessage(elements.authMessage, error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = authState.mode === "register" ? "Tạo tài khoản" : "Đăng nhập";
+  }
+}
+
+async function logoutAccount() {
+  try { await appApi("/api/auth/logout", { method: "POST" }); } catch { /* The local logout still completes. */ }
+  await updateCurrentBookProgress();
+  if (state.pdf) await state.pdf.destroy();
+  authState.user = null;
+  authState.csrfToken = "";
+  vocaState.apiKey = "";
+  state.pdf = null;
+  state.pages = [];
+  state.currentBookId = null;
+  elements.reader.classList.add("hidden");
+  elements.welcome.classList.remove("hidden");
+  elements.userMenu.classList.add("hidden");
+  elements.libraryGrid.innerHTML = "";
+  setVocaConnected(false);
+  showAuthGate();
+}
+
+const bookDatabase = new Promise((resolve, reject) => {
+  const request = indexedDB.open("trang-giay-library", 1);
+  request.onupgradeneeded = () => {
+    const database = request.result;
+    const store = database.createObjectStore("books", { keyPath: "id" });
+    store.createIndex("ownerId", "ownerId", { unique: false });
+  };
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () => reject(request.error);
+});
+
+function idbRequest(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function getLocalBooks() {
+  if (!authState.user) return [];
+  const database = await bookDatabase;
+  const transaction = database.transaction("books", "readonly");
+  const books = await idbRequest(transaction.objectStore("books").index("ownerId").getAll(authState.user.id));
+  return books.sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
+}
+
+async function makeBookId(file) {
+  const identity = `${authState.user.id}:${file.name}:${file.size}:${file.lastModified || 0}`;
+  if (window.crypto?.subtle) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(identity));
+    return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+  return encodeURIComponent(identity);
+}
+
+async function saveBookLocally(file) {
+  if (!authState.user) return null;
+  const database = await bookDatabase;
+  const id = await makeBookId(file);
+  const store = database.transaction("books", "readwrite").objectStore("books");
+  const existing = await idbRequest(store.get(id));
+  const record = {
+    id,
+    ownerId: authState.user.id,
+    name: file.name,
+    size: file.size,
+    type: file.type || "application/pdf",
+    lastModified: file.lastModified || Date.now(),
+    file,
+    addedAt: existing?.addedAt || Date.now(),
+    lastOpenedAt: Date.now(),
+    lastPage: existing?.lastPage || 1,
+    totalPages: existing?.totalPages || 0,
+  };
+  await idbRequest(store.put(record));
+  state.currentBookId = id;
+  await renderLibrary();
+  return record;
+}
+
+async function updateCurrentBookProgress() {
+  if (!state.currentBookId || !authState.user || !state.pdf) return;
+  const bookId = state.currentBookId;
+  const ownerId = authState.user.id;
+  const page = state.page;
+  const totalPages = state.pdf.numPages;
+  try {
+    const database = await bookDatabase;
+    const store = database.transaction("books", "readwrite").objectStore("books");
+    const book = await idbRequest(store.get(bookId));
+    if (!book || book.ownerId !== ownerId) return;
+    book.lastPage = page;
+    book.totalPages = totalPages;
+    book.lastOpenedAt = Date.now();
+    await idbRequest(store.put(book));
+  } catch (error) {
+    console.warn("Could not save reading progress", error);
+  }
+}
+
+function scheduleBookProgressSave() {
+  clearTimeout(scheduleBookProgressSave.timer);
+  scheduleBookProgressSave.timer = setTimeout(updateCurrentBookProgress, 700);
+}
+
+async function openLocalBook(id) {
+  const database = await bookDatabase;
+  const book = await idbRequest(database.transaction("books", "readonly").objectStore("books").get(id));
+  if (!book || book.ownerId !== authState.user?.id) return;
+  const file = new File([book.file], book.name, { type: book.type, lastModified: book.lastModified });
+  await openPdf(file, { bookRecord: book });
+}
+
+async function deleteLocalBook(id) {
+  const books = await getLocalBooks();
+  const book = books.find((item) => item.id === id);
+  if (!book || !confirm(`Xóa “${book.name}” khỏi thiết bị này?`)) return;
+  const database = await bookDatabase;
+  await idbRequest(database.transaction("books", "readwrite").objectStore("books").delete(id));
+  if (state.currentBookId === id) state.currentBookId = null;
+  await renderLibrary();
+  showToast("Đã xóa sách khỏi thiết bị.");
+}
+
+function formatFileSize(bytes) {
+  return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+async function renderLibrary() {
+  try {
+    const books = await getLocalBooks();
+    elements.libraryGrid.innerHTML = "";
+    elements.libraryEmpty.classList.toggle("hidden", books.length > 0);
+    books.forEach((book) => {
+      const card = document.createElement("article");
+      card.className = "book-card";
+      const cover = document.createElement("div");
+      cover.className = "book-card-cover";
+      cover.textContent = "PDF";
+      const copy = document.createElement("div");
+      copy.className = "book-card-copy";
+      const title = document.createElement("strong");
+      title.textContent = normalizeFileName(book.name);
+      const meta = document.createElement("small");
+      meta.textContent = `${formatFileSize(book.size)}${book.totalPages ? ` · Trang ${book.lastPage}/${book.totalPages}` : ""}`;
+      const openButton = document.createElement("button");
+      openButton.type = "button";
+      openButton.textContent = "Đọc tiếp →";
+      openButton.addEventListener("click", () => openLocalBook(book.id));
+      copy.append(title, meta, openButton);
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "book-card-delete";
+      deleteButton.setAttribute("aria-label", `Xóa ${book.name}`);
+      deleteButton.textContent = "×";
+      deleteButton.addEventListener("click", () => deleteLocalBook(book.id));
+      card.append(cover, copy, deleteButton);
+      elements.libraryGrid.append(card);
+    });
+  } catch (error) {
+    console.error(error);
+    elements.libraryEmpty.classList.remove("hidden");
+    elements.libraryEmpty.querySelector("p").textContent = "Trình duyệt không cho phép lưu sách trên thiết bị này.";
+  }
 }
 
 function normalizeFileName(name) {
@@ -153,13 +449,14 @@ async function extractPage(pageNumber) {
   return { number: pageNumber, blocks, text: blocks.map((block) => block.text).join(" ") };
 }
 
-async function openPdf(file) {
+async function openPdf(file, options = {}) {
   if (!file || (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf"))) {
     showToast("Vui lòng chọn một file PDF.");
     return;
   }
 
   if (state.pdf) await state.pdf.destroy();
+  let activeBook = options.bookRecord || null;
   elements.welcome.classList.add("hidden");
   elements.reader.classList.remove("hidden");
   elements.loading.classList.remove("hidden");
@@ -174,6 +471,14 @@ async function openPdf(file) {
   try {
     const data = new Uint8Array(await file.arrayBuffer());
     state.pdf = await pdfjsLib.getDocument({ data }).promise;
+    if (activeBook) {
+      state.currentBookId = activeBook.id;
+    } else {
+      try { activeBook = await saveBookLocally(file); } catch (error) {
+        console.warn("Could not store PDF locally", error);
+        showToast("PDF vẫn mở được nhưng chưa thể lưu vào thư viện thiết bị.");
+      }
+    }
     elements.pageStatus.textContent = `${state.pdf.numPages} trang`;
     buildPageList();
 
@@ -189,7 +494,9 @@ async function openPdf(file) {
     elements.loading.classList.add("hidden");
     elements.readerNav.classList.remove("hidden");
     $("#searchButton").disabled = false;
+    state.page = Math.max(1, Math.min(activeBook?.lastPage || 1, state.pdf.numPages));
     updateNavigation();
+    if (state.page > 1) goToPage(state.page);
     if (!state.pages.some((page) => page.text.trim())) {
       setMode("original");
       showToast("PDF này không có lớp chữ. Đã chuyển sang xem trang gốc.");
@@ -278,6 +585,7 @@ function updateNavigation() {
   $("#prevPage").disabled = state.page <= 1;
   $("#nextPage").disabled = state.page >= state.pdf.numPages;
   $$('[data-go-page]').forEach((button) => button.classList.toggle("active", Number(button.dataset.goPage) === state.page));
+  scheduleBookProgressSave();
 }
 
 function chooseFile() {
@@ -489,7 +797,7 @@ async function connectVoca() {
   vocaState.apiKey = key;
   try {
     await loadVocaCollections();
-    storage.set("voca-api-key", key);
+    if (vocaKeyForUser()) storage.set(vocaKeyForUser(), key);
     setVocaConnected(true);
     if (vocaState.selection) showVocaSave(); else showVocaReady();
   } catch (error) {
@@ -529,7 +837,7 @@ async function saveSelectionToVoca() {
   try {
     const result = await vocaRequest("/external/vocabulary", { method: "POST", body: JSON.stringify(body) });
     vocaState.collectionId = collectionId;
-    storage.set("voca-collection-id", collectionId);
+    scheduleSettingsSync();
     const messages = { created: "Đã lưu từ mới vào Voca.", updated: "Đã bổ sung ngữ cảnh vào từ này.", unchanged: "Từ này đã có trong Voca." };
     const message = messages[result.status] || "Đã lưu vào Voca.";
     setFormMessage(elements.vocaSaveMessage, message, true);
@@ -547,19 +855,36 @@ async function saveSelectionToVoca() {
 
 function returnHome() {
   if (!state.pdf || confirm("Đóng tài liệu hiện tại và quay về trang đầu?")) {
+    clearTimeout(scheduleBookProgressSave.timer);
+    updateCurrentBookProgress();
     state.pdf?.destroy();
     state.pdf = null;
     state.pages = [];
     elements.reader.classList.add("hidden");
     elements.welcome.classList.remove("hidden");
     elements.sidebar.classList.remove("open");
+    renderLibrary();
+    return true;
   }
+  return false;
 }
 
 applyPreferences();
 setVocaConnected(Boolean(vocaState.apiKey));
 
 elements.fileInput.addEventListener("change", (event) => openPdf(event.target.files[0]));
+$("#loginTab").addEventListener("click", () => setAuthMode("login"));
+$("#registerTab").addEventListener("click", () => setAuthMode("register"));
+elements.authForm.addEventListener("submit", submitAuth);
+elements.userButton.addEventListener("click", () => {
+  elements.userMenu.classList.toggle("hidden");
+  elements.userButton.setAttribute("aria-expanded", String(!elements.userMenu.classList.contains("hidden")));
+});
+$("#logoutButton").addEventListener("click", logoutAccount);
+$("#showLibrary").addEventListener("click", () => {
+  elements.userMenu.classList.add("hidden");
+  if (returnHome()) $("#localLibrary").scrollIntoView({ behavior: "smooth", block: "start" });
+});
 [$("#openTopButton"), $("#openHeroButton")].forEach((label) => label.addEventListener("keydown", (event) => {
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
@@ -572,9 +897,9 @@ $("#settingsButton").addEventListener("click", () => {
   elements.settings.classList.toggle("hidden");
   $("#settingsButton").setAttribute("aria-expanded", String(!elements.settings.classList.contains("hidden")));
 });
-$("#fontDown").addEventListener("click", () => { state.fontSize = Math.max(14, state.fontSize - 1); storage.set("reader-font-size", state.fontSize); applyPreferences(); });
-$("#fontUp").addEventListener("click", () => { state.fontSize = Math.min(34, state.fontSize + 1); storage.set("reader-font-size", state.fontSize); applyPreferences(); });
-elements.lineHeight.addEventListener("input", (event) => { state.lineHeight = Number(event.target.value); storage.set("reader-line-height", state.lineHeight); applyPreferences(); });
+$("#fontDown").addEventListener("click", () => { state.fontSize = Math.max(14, state.fontSize - 1); storage.set("reader-font-size", state.fontSize); applyPreferences(); scheduleSettingsSync(); });
+$("#fontUp").addEventListener("click", () => { state.fontSize = Math.min(34, state.fontSize + 1); storage.set("reader-font-size", state.fontSize); applyPreferences(); scheduleSettingsSync(); });
+elements.lineHeight.addEventListener("input", (event) => { state.lineHeight = Number(event.target.value); storage.set("reader-line-height", state.lineHeight); applyPreferences(); scheduleSettingsSync(); });
 $$('[data-set-theme]').forEach((button) => button.addEventListener("click", () => setTheme(button.dataset.setTheme)));
 $("#reflowButton").addEventListener("click", () => setMode("reflow"));
 $("#originalButton").addEventListener("click", () => setMode("original"));
@@ -599,9 +924,9 @@ $("#saveToVoca").addEventListener("click", saveSelectionToVoca);
 $("#changeVocaKey").addEventListener("click", () => showVocaConnect());
 [elements.vocaCollection, elements.vocaDefaultCollection].forEach((select) => select.addEventListener("change", (event) => {
   vocaState.collectionId = event.target.value;
-  storage.set("voca-collection-id", vocaState.collectionId);
   elements.vocaCollection.value = vocaState.collectionId;
   elements.vocaDefaultCollection.value = vocaState.collectionId;
+  scheduleSettingsSync();
 }));
 
 elements.reflow.addEventListener("contextmenu", (event) => {
@@ -623,6 +948,7 @@ $("#selectionSaveButton").addEventListener("pointerdown", (event) => event.preve
 $("#selectionSaveButton").addEventListener("click", () => openVocaSheet(true));
 document.addEventListener("pointerdown", (event) => {
   if (!elements.selectionMenu.contains(event.target)) elements.selectionMenu.classList.add("hidden");
+  if (!elements.userMenu.contains(event.target) && !elements.userButton.contains(event.target)) elements.userMenu.classList.add("hidden");
 });
 document.addEventListener("selectionchange", () => {
   clearTimeout(showMobileSelectionAction.timer);
@@ -652,3 +978,4 @@ const observer = new IntersectionObserver((entries) => {
 
 const contentObserver = new MutationObserver(() => $$('.text-page').forEach((page) => observer.observe(page)));
 contentObserver.observe(elements.reflow, { childList: true });
+initializeAuth();

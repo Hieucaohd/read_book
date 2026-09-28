@@ -5,6 +5,8 @@
 ## Tính năng
 
 - Reflow nội dung PDF thành văn bản vừa màn hình
+- Tài khoản bằng username/password và đồng bộ thiết lập đọc qua Turso
+- Thư viện PDF lưu bằng IndexedDB trên từng thiết bị, tách riêng theo tài khoản
 - Tăng/giảm cỡ chữ và khoảng cách dòng
 - Giao diện sáng, màu giấy và tối
 - Chế độ xem trang PDF gốc
@@ -22,6 +24,26 @@
 3. Trong chế độ **Văn bản**, bôi đen một từ. Trên máy tính, nhấn chuột phải và chọn **Lưu vào Voca**. Trên điện thoại, chạm nút **Lưu vào Voca** xuất hiện cạnh vùng chọn.
 
 API key chỉ được lưu trong `localStorage` của trình duyệt và được gửi trực tiếp tới `https://voca-zeta-five.vercel.app`; server Flask không nhận hoặc lưu key.
+
+## Tài khoản và dữ liệu
+
+- Turso chỉ lưu tài khoản đã hash mật khẩu và các thiết lập: theme, cỡ chữ, khoảng cách dòng, bộ từ Voca mặc định.
+- PDF, tên sách, dung lượng và tiến độ đọc được lưu trong IndexedDB của trình duyệt, có `ownerId` để tách dữ liệu giữa các tài khoản trên cùng thiết bị.
+- Nội dung PDF không được gửi tới Flask, Vercel hoặc Turso. Xóa dữ liệu website trong trình duyệt sẽ xóa thư viện sách trên thiết bị đó.
+
+Các biến môi trường production cần có:
+
+```text
+TURSO_DATABASE_URL
+TURSO_AUTH_TOKEN
+FLASK_SECRET_KEY
+```
+
+Khởi tạo schema thủ công khi cần:
+
+```bash
+python scripts/init_db.py
+```
 
 ## Chạy local
 
