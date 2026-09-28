@@ -348,11 +348,22 @@ async function renderLibrary() {
       title.textContent = normalizeFileName(book.name);
       const meta = document.createElement("small");
       meta.textContent = `${formatFileSize(book.size)}${book.totalPages ? ` · Trang ${book.lastPage}/${book.totalPages}` : ""}`;
+      const progress = document.createElement("div");
+      progress.className = "book-progress";
+      const progressBar = document.createElement("span");
+      const progressValue = book.totalPages ? Math.min(100, Math.max(0, (book.lastPage / book.totalPages) * 100)) : 0;
+      progressBar.style.width = `${progressValue}%`;
+      progress.setAttribute("role", "progressbar");
+      progress.setAttribute("aria-label", `Tiến độ đọc ${Math.round(progressValue)}%`);
+      progress.setAttribute("aria-valuenow", String(Math.round(progressValue)));
+      progress.setAttribute("aria-valuemin", "0");
+      progress.setAttribute("aria-valuemax", "100");
+      progress.append(progressBar);
       const openButton = document.createElement("button");
       openButton.type = "button";
-      openButton.textContent = "Đọc tiếp →";
+      openButton.textContent = book.lastPage > 1 ? `Đọc tiếp từ trang ${book.lastPage} →` : "Bắt đầu đọc →";
       openButton.addEventListener("click", () => openLocalBook(book.id));
-      copy.append(title, meta, openButton);
+      copy.append(title, meta, progress, openButton);
       const deleteButton = document.createElement("button");
       deleteButton.type = "button";
       deleteButton.className = "book-card-delete";
@@ -956,6 +967,16 @@ document.addEventListener("selectionchange", () => {
   showMobileSelectionAction.timer = setTimeout(showMobileSelectionAction, 220);
 });
 window.addEventListener("scroll", () => elements.selectionAction.classList.add("hidden"), { passive: true });
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") {
+    clearTimeout(scheduleBookProgressSave.timer);
+    updateCurrentBookProgress();
+  }
+});
+window.addEventListener("pagehide", () => {
+  clearTimeout(scheduleBookProgressSave.timer);
+  updateCurrentBookProgress();
+});
 
 window.addEventListener("resize", () => { if (state.mode === "original" && state.pdf) renderOriginalPage(); });
 window.addEventListener("keydown", (event) => {

@@ -7,6 +7,7 @@
 - Reflow nội dung PDF thành văn bản vừa màn hình
 - Tài khoản bằng username/password và đồng bộ thiết lập đọc qua Turso
 - Thư viện PDF lưu bằng IndexedDB trên từng thiết bị, tách riêng theo tài khoản
+- Tự ghi nhớ trang đang đọc và mở lại đúng vị trí cho từng cuốn sách
 - Tăng/giảm cỡ chữ và khoảng cách dòng
 - Giao diện sáng, màu giấy và tối
 - Chế độ xem trang PDF gốc

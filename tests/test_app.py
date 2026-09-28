@@ -24,7 +24,11 @@ def test_home_page():
 def test_reader_assets():
     client = app.test_client()
     assert client.get("/css/app.css").status_code == 200
-    assert client.get("/js/app.js").status_code == 200
+    javascript = client.get("/js/app.js")
+    assert javascript.status_code == 200
+    source = javascript.get_data(as_text=True)
+    assert "updateCurrentBookProgress" in source
+    assert 'window.addEventListener("pagehide"' in source
     assert client.get("/vendor/pdfjs/pdf.min.js").status_code == 200
     assert client.get("/vendor/pdfjs/pdf.worker.min.js").status_code == 200
 
